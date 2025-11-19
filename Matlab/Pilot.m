@@ -21,6 +21,6 @@ spectrogram(signalIQ,500,0,500,Fs,'yaxis','centered')
 figure(2)
 obw(signalIQ,Fs) ;
 %% Received Signal
-message_out = LoRa_Rx(signalIQ,BW,SF,2,Fs,Fc - fc) ;
+% message_out = LoRa_Rx(signalIQ,BW,SF,2,Fs,Fc - fc) ;
 %% Message Out
-disp(['Message Received = ' char(message_out)])
+%disp(['Message Received = ' char(message_out)])

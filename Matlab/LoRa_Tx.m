@@ -1,27 +1,28 @@
 function [signal_mod] = LoRa_Tx(message,Bandwidth,SF,Pt,Fs,df,varargin)
 % LoRa_Tx emulates a Lora transmission
 %
-%   in:  message      payload message
-%        Bandwidth    signal bandwidth of LoRa transmisson  
-%        SF           spreading factor
-%        Pt           transmit power in deicbels
-%        Fs           sampling frequency
-%        dF           frequency offset
-%        varargin{1}  code rate
-%        varargin{2}  symbols in preamble
-%        varargin{3}  sync key
+%   in:  message      payload message (полезная нагрузка)
+%        Bandwidth    signal bandwidth of LoRa transmisson (Полоса пропускания) 
+%        SF           spreading factor (коэффициент расширения спектра)
+%        Pt           transmit power in deicbels (мощность передачи в дБ)
+%        Fs           sampling frequency (Частота дискретизации)
+%        dF           frequency offset (Частотное смещение)
+%        varargin{1}  code rate (скорость кодирвоания)
+%        varargin{2}  symbols in preamble (количество символов в преамбуле)
+%        varargin{3}  sync key (синхронизационный ключ)
 %
 %  out:  signal       LoRa IQ waveform
-%        packet       encoded message
+%        packet       encoded message (закодированное сообщение)
 %
 % Dr Bassel Al Homssi  
 % RMIT University 
 % Credit to rpp0 on https://github.com/rpp0/gr-lora
 
+% Обработка переменного числа входных аргументов
 if nargin == 6
-    CR = 1 ;
-    n_preamble = 8 ;
-    SyncKey = 5 ;
+    CR = 1 ; % Скорость кодирования
+    n_preamble = 8 ; % Количество символов в преамбуле
+    SyncKey = 5 ; % Синхронизационный ключ
 elseif nargin == 7
     CR = varargin{1} ;
     n_preamble = 8 ;
@@ -36,10 +37,15 @@ elseif nargin == 9
     SyncKey = varargin{3} ;
 end
 
+% Кодирование сообщения в пакет LoRa
 packet = LoRa_Encode_Full(message,SF,CR) ; % encode message
+% Модуляция пакета в LoRa сигнал
 signal = LoRa_Modulate_Full(packet,SF,Bandwidth,n_preamble,SyncKey,Fs) ; % LoRa modulate message
+% Применение частотного смещения и преобразование в мощность
 signal_mod = 10.^(Pt./20).*signal.*exp(-j.*2.*pi.*df/Fs.*(0:length(signal)-1))' ; % frquency shift and convert to power
 end
+
+% LoRa_Encode_Full кодирует сообщение в пакет LoRa
 function [packet] = LoRa_Encode_Full(message,SF,CR)
 % LoRa_Encode_Full emulates a Lora transmission
 %
@@ -49,34 +55,40 @@ function [packet] = LoRa_Encode_Full(message,SF,CR)
 %
 %  out:  packet       encoded lora packet 
 
-CRC_pld = 1 ;  % cyclic rate code flag
-imp = 0 ;
-opt = 0 ;
-%% String to Decimal
-message_chr = convertStringsToChars(message) ;
-message_dbl = uint8(message_chr) ;
-%% Packet Length Calculations
+% Параметры кодирования
+CRC_pld = 1 ;   % флаг использования циклического избыточного кода
+imp = 0 ; % флаг имплицитной заголовочной информации
+opt = 0 ; % флаг оптимизации
+%% String to Decimal (Преобразование строки в десятичные значения)
+message_chr = convertStringsToChars(message) ;  % строка в массив символов
+message_dbl = uint8(message_chr) ; % символы в числовые коды ASCII
+%% Packet Length Calculations (Расчет длины пакета)
+% Определение дополнительной длины полезной нагрузки в зависимости от SF
 N_pld = (SF == 7).*1 + (SF == 8).*2 + (SF == 9).*3 + (SF == 10).*4 + (SF == 11).*5 + (SF == 12).*6 ;
+% Расчет общего количества символов в пакете
 n_packet = 8 + max([ceil((8*(length(message_dbl) + 5) - 4.*SF + 28 + 16.*CRC_pld - 20.*imp)/(4.*(SF - 2.*opt))).*(CR + 4) 0]) ;
+% Расчет количества символов после перемежения
 n_wht = SF .* floor((n_packet-8)/(4 + CR)) + N_pld - 1 ;
+% Расчет длины полезной нагрузки
 n_pld = ceil((n_wht + (SF == 7).*0 + (SF == 8).*1 + (SF == 9).*2 + (SF == 10).*3 + (SF == 11).*4 + (SF == 12).*5)/2) ;
+% Расчет количества байтов заполнения
 n_pad = n_pld - 5 - length(message_dbl) - CRC_pld.*2 ;
-%% Create payload message
-CRC_dbl = CRC_pld.*[1 1] ; % CRC is not working atm
-pad_dbl = zeros(1,n_pad + N_pld - 1) ; % padding
-pld_dbl = [255 255 0 0 message_dbl 0 CRC_dbl pad_dbl] ; % LoRa payload
-%% Swap Nibbles
+%% Create payload message (Создание полезной нагрузки)
+CRC_dbl = CRC_pld.*[1 1] ; % CRC is not working atm (не работает)
+pad_dbl = zeros(1,n_pad + N_pld - 1) ; % padding (байты заполнения)
+pld_dbl = [255 255 0 0 message_dbl 0 CRC_dbl pad_dbl] ; % LoRa payload (полная полезная нагрузка)
+%% Swap Nibbles (Обмен полубайтами)
 pld_swp = LoRa_encode_swap(pld_dbl) ;
-%% Payload Encoding
+%% Payload Encoding (?)
 pld_enc = LoRa_encode_hamming(pld_swp,CR) ;
 pld_enc = pld_enc(1 : n_wht) ;
-%% Payload Whiten
+%% Payload Whiten (?)
 pld_wht = LoRa_encode_white(pld_enc,CR,0) ;
-%% Header Encoding
+%% Header Encoding (кодрирование заголовка)
 packet_hdr = [(length(message_dbl)+5) CRC_pld*16+(CR==1)*32+(CR==2).*64+(CR==3).*96+(CR==4)*128 224] ;
 packet_hdr_enc_tmp = LoRa_encode_hamming(packet_hdr,4) ;
 packet_hdr_enc = [packet_hdr_enc_tmp(1:5) pld_wht(1:N_pld-1)] ;
-%% Packet Creation
+%% Packet Creation (создание пакета)
 packet_pld = pld_wht(N_pld : end) ;
 packet_pld_shf = bitand(LoRa_encode_shuffle(packet_pld),2^(4+CR)-1)  ;
 packet_hdr_shf = LoRa_encode_shuffle(packet_hdr_enc)  ;
@@ -89,63 +101,78 @@ packet_hdr_gray = LoRa_encode_gray(packet_hdr_int) ;
 % Packet final
 packet = [4*packet_hdr_gray packet_pld_gray] ;
 end
+
+%LoRa_encode_swap меняет местами полубайты (nibbles) в каждом символе
 function [symbols_swp] = LoRa_encode_swap(symbols)
 % LoRa_encode_swap swaps nibbles
 %
-%   in:  symbols            symbol sequence
+%   in:  symbols            symbol sequence (последовательность символов)
 %
-%  out:  symbols_swp        symbols with swapped nibbles
+%  out:  symbols_swp        symbols with swapped nibbles (символы с обмененными полубайтами)
 
 symbols_swp = zeros(1,length(symbols)) ;
+
 for ctr = 1 : length(symbols)
+    % Извлечение младшего полубайта (биты 0-3) и сдвиг в старшую позицию
+    % Извлечение старшего полубайта (биты 4-7) и сдвиг в младшую позицию
+    % Объединение операцией ИЛИ
     symbols_swp(ctr) = bitor(bitsll(bitand(symbols(ctr),hex2dec('0F')),4),bitsra(bitand(symbols(ctr),hex2dec('F0')),4)) ; % swap first half of 8-bit sequencne with other half 
 end
 end
+
+
+% LoRa_encode_hamming выполняет кодирование Хэмминга для повышения помехоустойчивости
 function [encoded] = LoRa_encode_hamming(symbols,CR)
 % LoRa_encode_hamming hamming encodes symbols to ensure a more accurate decoding
 %
-%   in:  symbols      symmbol sequence
-%        CR           hamming coding rate 
+%   in:  symbols      symmbol sequence (последоввательность символов)
+%        CR           hamming coding rate (скорость кодирования)
 %
-%  out:  encoded      hamming encoded symbols
+%  out:  encoded      hamming encoded symbols (закодированные символы)
 
+% режим с обнаружением и исправлением ошибок
 if CR > 2 && CR <= 4 % detection and correction
     n = floor(length(symbols).*(4 + 4)/4) ;
     
+    % Таблица кодов
     H = [0,210,85,135,153,75,204,30,225,51,180,102,120,170,45,255] ; 
     
     encoded = zeros(1,n) ;
     Ctr = 1 ;
     for ctr = 1 : length(symbols)
-        s0 = bitand(floor(bitsra(symbols(ctr),4)),hex2dec('0F')) ;
-        s1 = bitand(floor(bitsra(symbols(ctr),0)),hex2dec('0F')) ;
-        encoded(Ctr+0) = H(s0+1) ;
-        encoded(Ctr+1) = H(s1+1) ;
+        s0 = bitand(floor(bitsra(symbols(ctr),4)),hex2dec('0F')) ;  % старший полубайт
+        s1 = bitand(floor(bitsra(symbols(ctr),0)),hex2dec('0F')) ; % младший полубайт
+        encoded(Ctr+0) = H(s0+1) ; % кодирование старшего полубайта
+        encoded(Ctr+1) = H(s1+1) ; % кодирование младшего полубайта
         Ctr = Ctr + 2 ;
     end
-elseif CR > 0 && CR <= 2 % detection
+% режим только с обнаружением ошибок
+elseif CR > 0 && CR <= 2 % detection 
     Ctr = 1 ;
     for ctr = 1 : length(symbols)
-        s0 = bitand(floor(bitsra(symbols(ctr),4)),hex2dec('FF')) ;
-        s1 = bitand(floor(bitsra(symbols(ctr),0)),hex2dec('FF')) ;
-        encoded(Ctr+0) = selectbits_encode(s0) ;
+        s0 = bitand(floor(bitsra(symbols(ctr),4)),hex2dec('FF')) ; % младший байт
+        s1 = bitand(floor(bitsra(symbols(ctr),0)),hex2dec('FF')) ; % старший байт
+        encoded(Ctr+0) = selectbits_encode(s0) ; % специальное кодирование
         encoded(Ctr+1) = selectbits_encode(s1) ;
         Ctr = Ctr + 2 ;
     end
 end
 end
+
+% LoRa_encode_white выполняет взбивание данных для уменьшения избыточности
 function [symbols_white] = LoRa_encode_white(symbols,CR,DE)
 % LoRa_encode_white symbols whitening by adding a known sequence to the payload
 % bytes to reduce correlation redudancy
 %
-%   in:  symbols      symmbol sequence
-%        CR           coding rate 
-%        DE           data rate optimization flag
+%   in:  symbols      symmbol sequence (последовательность символов)
+%        CR           coding rate (скорость кодирования)
+%        DE           data rate optimization flag (флаг оптимизации скорости данных)
 %
-%  out:  symbols_white      whitened symbols
+%  out:  symbols_white      whitened symbols (перемешанные символы)
 
 if DE == 0
     if CR > 2 && CR <= 4
+        % Псевдослучайная последовательность для взбивания (CR 3-4)
         white_sequence = [255,255,45,255,120,255,225,255,0,255,210,45,85, ...
             120,75,225,102,0,30,210,255,85,45,75,120,102,225,30,210,255, ...
             135,45,204,120,170,225,180,210,153,135,225,204,0,170,0,180,0, ...
@@ -178,6 +205,7 @@ if DE == 0
             153,225,51,0,135,210,30,85,255,153,255,51,255,135,255,30,0,0,0,0, ...
             135,225,170,204] ;
     elseif CR > 0 && CR <= 2
+         % Псевдослучайная последовательность для взбивания (CR 1-2)
         white_sequence = [255,255,45,255,120,255,48,46,0,46,18,60,20,40,10, ...
             48,54,0,30,18,46,20,60,10,40,54,48,30,18,46,6,60,12,40,58,48,36, ...
             18,24,6,48,12,0,58,0,36,0,24,0,48,18,0,20,0,24,0,48,0,18,18,6,20, ...
@@ -203,44 +231,57 @@ if DE == 0
             24,48,34,0,6,18,30,20,46,24,46,34,46,6,46,30,0,0,0,0,36,6] ;
     end
 end
+% Обрезка до минимальной длины
 N = min([length(symbols) length(white_sequence)]) ; % cut-off to length of transmit symbols
+% Взбивание операцией XOR
 symbols_white = bitxor(symbols(1:N),white_sequence(1:N)); % encode white
 end
+
+% LoRa_encode_shuffle перемешивает биты символов по определенной схеме
 function [symbols_shuf] = LoRa_encode_shuffle(symbols)
 % LoRa_encode_shuffle shuffles symbols by a to combine header and
 % payload
 %
-%   in:  symbols            symbol vector
+%   in:  symbols            symbol vector (вектор символ)
 %
-%  out:  symbols_shuf       shuffle symbols
+%  out:  symbols_shuf       shuffle symbols (перемешанные символы)
 
 for Ctr = 1 : length(symbols)
-    symbols_binary = de2bi(symbols(Ctr),8) ;
+    symbols_binary = de2bi(symbols(Ctr),8) ; % преобразование в бинарный вид
+    % Специфическая перестановка битов
     symbols_shuf_binary = [symbols_binary(2) symbols_binary(3) symbols_binary(4) ...
         symbols_binary(6) symbols_binary(5) symbols_binary(1) symbols_binary(7) ...
         symbols_binary(8)] ;
-    symbols_shuf(Ctr) = bi2de(symbols_shuf_binary) ;
+    symbols_shuf(Ctr) = bi2de(symbols_shuf_binary) ; % обратно в десятичный вид
 end
 end
+
+
+% LoRa_encode_interleave выполняет перемежение символов
 function [symbols_interleaved] = LoRa_encode_interleave(symbols,ppm,rdd)
 % LoRa_encode_interleave imposes transposition and digit shift on the
 % symbols and rotation
 %
-%   in:  symbols            symbol sequence
+%   in:  symbols            symbol sequence (последовательность символов)
 %        ppm                SF
 %        rdd                CR
 %
-%  out:  symbols_interleaved       interleaved symbols
+%  out:  symbols_interleaved       interleaved symbols (?)
 
 symbols_interleaved = [] ;
 sym_idx_ext = 1 ;
+% Обработка блоками по SF символов
 for block_idx = 1 : floor(length(symbols)/(ppm))
+    % Преобразование в бинарную матрицу
     x = symbols((block_idx-1).*ppm+1:block_idx.*ppm) ;
+     % Транспонирование матрицы
     symbols_block_binary = de2bi(x,4+rdd) ;
+    % Обратно в десятичный вид
     symbols_block_binary_rotated = transpose(symbols_block_binary) ; % transposed 
     symbols_block_rorated = bi2de(symbols_block_binary_rotated) ;
     mask = ppm ;
     % rotate
+    % Циклический сдвиг каждого символа
     for ctr = 1 : 4 + rdd
         sym_int(ctr) = rotl(symbols_block_rorated(ctr),mask,ppm) ;
         mask = mask - 1 ;
@@ -248,6 +289,9 @@ for block_idx = 1 : floor(length(symbols)/(ppm))
     symbols_interleaved = [symbols_interleaved sym_int] ;
 end
 end
+
+
+% LoRa_encode_gray применяет кодирование Грея для уменьшения ошибок
 function [symbols] = LoRa_encode_gray(symbols)
 % LoRa_encode_gray implements gray coding to reduce errors of adjacent bits.
 %
@@ -264,6 +308,9 @@ for ctr = 1 : length(symbols)
     symbols(ctr) = bitxor(symbols(ctr),floor(bitsra(symbols(ctr),01))) ;
 end
 end
+
+
+% selectbits_encode выбирает определенные биты и добавляет нули
 function [symbol_rot] = selectbits_encode(symbol)
 % selectbits_encode concat zeros (from 8-bit to 4-bit)
 %
@@ -275,6 +322,9 @@ symbol_binary = de2bi(symbol,8) ;
 symbol_binary_rot = [0 symbol_binary(1) symbol_binary(2) symbol_binary(3) 0 symbol_binary(4) 0 0] ;
 symbol_rot = bi2de(symbol_binary_rot) ;
 end
+
+
+% rotl выполняет циклический сдвиг влево
 function [y] = rotl(bits,count,size)
 % rotl modulo rotation
 %
@@ -289,6 +339,9 @@ count = mod(count,size) ;
 bits = bitand(bits,len_mask) ;
 y = bitor(bitand(bitsll(bits,count),len_mask), floor(bitsra(bits,size - count))) ;
 end
+
+
+% LoRa_Modulate_Full создает полный пакет LoRa (преамбула + заголовок + полезная нагрузка)
 function [signal] = LoRa_Modulate_Full(packet,SF,Bandwidth,n_preamble,SyncKey,Fs)
 % LoRa_Modulate_Full constructs a lora packet (preamble + sync header + payload)
 %
