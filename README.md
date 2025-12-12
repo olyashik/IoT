@@ -1,4 +1,8 @@
+
+
 # IoT LoRa
+Matlab: https://github.com/bhomssi/LoRaMatlab/blob/master/Pilot.m
+Реализация передачи пакетов LoRa в беспроводном канале
 
 GNS3:
 *https://www.gns3.com/*
